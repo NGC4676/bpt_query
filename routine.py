@@ -51,6 +51,7 @@ table_M['log_SII6716_SII6731_err']= 0.434*table_M['SII6716_SII6731_err']
 table = table_M.to_pandas()
 table1 = table[table.category==1]
 table2 = table[table.category==2]
+
 # =============================================================================
 
 plt.figure(figsize=(8,7))
@@ -59,10 +60,10 @@ plt.errorbar(table1.log_NII6583_Ha, table1.log_OIII5007_Hb,
              xerr=table1.log_NII6583_Ha_err,yerr=table1.log_OIII5007_Hb_err,
              c="gray",ls="",marker="o",ms=4,mfc="gold",mec="k",lw=0.5,alpha=0.7,
              label=r"SITELLE: symmetric + L$\rm_{H\alpha}>10^{37}$",zorder=3)
-plt.errorbar(table2.log_NII6583_Ha, table2.log_OIII5007_Hb,
-             xerr=table2.log_NII6583_Ha_err,yerr=table2.log_OIII5007_Hb_err,
-             c="gray",ls="",marker="^",ms=4,mfc="orange",mec="k",lw=0.5,alpha=0.3,
-             label=r"SITELLE: symmetric + L$\rm_{H\alpha}>10^{37}$",zorder=2)
+#plt.errorbar(table2.log_NII6583_Ha, table2.log_OIII5007_Hb,
+#             xerr=table2.log_NII6583_Ha_err,yerr=table2.log_OIII5007_Hb_err,
+#             c="gray",ls="",marker="^",ms=4,mfc="orange",mec="k",lw=0.5,alpha=0.3,
+#             label=r"SITELLE: symmetric + L$\rm_{H\alpha}>10^{37}$",zorder=2)
 plt.scatter(tab_mod.log_NII6583_Ha,tab_mod.log_OIII5007_Hb,c=tab_mod.d_age,
             cmap='gnuplot2',s=5,lw=0,alpha=0.7)
 cb = plt.colorbar()
@@ -262,7 +263,7 @@ import BPT_query as B
 params = ["log_age","M_cl","SFE","hden0"]
 cond = (tab_mod.log_NII6583_Ha>-2.5) & (tab_mod.log_OIII5007_Hb>-3.5)
 Q = B.BPT_query(data=tab_mod, param=params)
-Q.set_data(line_used = ["log_NII6583_Ha","log_OIII5007_Hb"],table_obs=table1)
+Q.set_data(line_used = ["log_NII6583_Ha","log_OIII5007_Hb"],table_obs=table1, use_pca=False)
 Q.regression("RF-single", n_estimators=200,min_samples_leaf=30)
 
 Q.draw_pred_MC_hist([[-.65,-.5]],xlabels=['log age','M cloud','SFE','nH'])
@@ -304,24 +305,40 @@ ax.plot_surface(X, Y, down_guess[:,3].reshape((11,15)),linewidth=0,alpha=0.8)
 # Classification
 # =============================================================================
 import BPT_query as B
-params = ["M_cl","SFE","hden0"]
-cond = (tab_mod.log_NII6583_Ha>-2.5) & (tab_mod.log_OIII5007_Hb>-3.5)
-
 
 def binning(x,a1,a2):
     if x<=a1: y=0
     elif x<=a2: y=1
     else: y=2
     return y
+
+params = ["M_cl","SFE","hden0"]
 tab_mod["M_bin"] = [binning(m,5.75,6.5) for m in tab_mod.M_cl]
 tab_mod["SFE_bin"] = [binning(m,3,7) for m in tab_mod.SFE]
 tab_mod["nH_bin"] = [binning(m,200.,500.) for m in tab_mod.hden0]
 
 
+cond = (tab_mod.log_NII6583_Ha>-2.5) & (tab_mod.log_OIII5007_Hb>-3.5)
 
-Q = B.BPT_query(data=tab_mod[cond], param=["M_bin","SFE_bin","nH_bin"])
-Q.set_data(line_used = line_used0)
-Q.classification("RF",n_estimators=200,min_samples_leaf=20)
+Q = B.BPT_query(data=tab_mod, param=["M_bin","SFE_bin","nH_bin"])
+Q.set_data(line_used = line_used0, table_obs=table1, use_pca=False)
+#Q.classification("RF",n_estimators=200,min_samples_leaf=20)
 Q.classification("SVM",C=1,gamma=10,probability=True)
 
 
+# =============================================================================
+# 
+# =============================================================================
+params = ["log_age","SFE","hden0"]
+Q = B.BPT_query(data=tab_mod, param=params)
+Q.set_data(line_used = ["log_NII6583_Ha","log_OIII5007_Hb","M_t"],use_pca=False,table_obs=table1)
+Q.regression("RF-single", n_estimators=200)
+
+from sklearn.ensemble import ExtraTreesRegressor
+regr_multi = ExtraTreesRegressor(200)
+regr_multi.fit(Q.X_train, Q.y_train)
+
+y_pred = regr_multi.predict(Q.X_test)
+y_pred2 = pd.DataFrame({t:col for (t,col) in zip(Q.param,y_pred.T)},columns=Q.param)
+
+[B.r2_score(Q.y_test[t], y_pred2[t]) for t in Q.param]

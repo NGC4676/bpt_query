@@ -76,6 +76,8 @@ def read_data(file):
     
     tab_mod = pd.read_table(file)
     
+    tab_mod.loc[:,"M_t"] = np.log10(10**tab_mod.M_cl - 10**(tab_mod.clustermass_log10_g-33))
+    
     tab_mod.loc[:,"log_age"] = np.log10(tab_mod.age_yr)
     tab_mod.loc[:,"age_Myr"] = tab_mod.age_yr/1e6
     d_age = np.append(tab_mod.age_Myr[1:],tab_mod.age_Myr.iloc[-1]) - tab_mod.age_Myr
@@ -126,9 +128,9 @@ def get_data_err_linear(table_data,line_used,line_used_err):
 # =============================================================================
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, accuracy_score,precision_score,f1_score
-from sklearn.ensemble import RandomForestRegressor,RandomForestClassifier
+from sklearn.ensemble import RandomForestRegressor,ExtraTreesRegressor,RandomForestClassifier
 from sklearn.linear_model import LinearRegression
-from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neighbors import KNeighborsRegressor
 from sklearn.multioutput import MultiOutputRegressor,MultiOutputClassifier
 from sklearn.decomposition import PCA
 from sklearn import svm
@@ -141,7 +143,7 @@ class BPT_query():
         y_true = pd.DataFrame({t:self.data[t] for t in param},columns=param)
         self.y_true = y_true
         
-        tab_train, tab_test, y_train, y_test = train_test_split(self.data, self.y_true, test_size=0.2)
+        tab_train, tab_test, y_train, y_test = train_test_split(self.data, self.y_true, test_size=0.25)
         self.tab_train, self.tab_test = tab_train, tab_test
 
         self.y_train, self.y_test = y_train, y_test        
@@ -213,6 +215,9 @@ class BPT_query():
             self.n_estimators = regr_multi.estimator.n_estimators
         elif method == "RF-single":    
             regr_multi = RandomForestRegressor(**kwargs)
+            self.n_estimators = regr_multi.n_estimators
+        elif method == "ExF-single":    
+            regr_multi = ExtraTreesRegressor(**kwargs)
             self.n_estimators = regr_multi.n_estimators
         elif method == "SVR":
             regr_multi = MultiOutputRegressor(svm.SVR(**kwargs))
@@ -371,9 +376,10 @@ class BPT_query():
         plt.figure(figsize=(11,7))
         plt.subplot2grid((4, 3), (0, 0),rowspan=4,colspan=2)
         
-        BPT_contours(self.data.log_NII6583_Ha,self.data.log_OIII5007_Hb,weights=self.data.age_Myr)
-#        s = plt.scatter(self.data.log_NII6583_Ha,self.data.log_OIII5007_Hb,c=tab_mod.d_age,
-#                    cmap='gnuplot2',s=10,lw=0,alpha=0.7)
+#        BPT_contours(self.data.log_NII6583_Ha,self.data.log_OIII5007_Hb,weights=self.data.age_Myr)
+        plt.scatter(self.data.log_NII6583_Ha,self.data.log_OIII5007_Hb,
+                    c='k',s=5,lw=0,alpha=0.5)
+        
         plt.errorbar(self.table_obs.log_NII6583_Ha, self.table_obs.log_OIII5007_Hb,
                      xerr=self.table_obs.log_NII6583_Ha_err,yerr=self.table_obs.log_OIII5007_Hb_err,
                      c="gray",ls="",marker="o",ms=4,mfc="gold",mec="k",lw=.8,alpha=0.8,
@@ -381,10 +387,11 @@ class BPT_query():
         
         plt.scatter(pos[0][0],pos[0][1],c="lime",s=100,edgecolor='gray',alpha=1.,zorder=4)
         plt.scatter(pos[0][0],pos[0][1],marker='x',c="k",s=40,lw=1,alpha=1.,zorder=5)
-#        cb = plt.colorbar(s)
+#        cb = plt.colorbar(sc)
 #        cb.set_label(r'$\rm\Delta{\ }Age(Myr)$',fontsize="large")
 #        plt.clim(0.,2.)
-        
+        BPT_set()
+         
         P1_MC, P1_vote_MC = self.predict_MC(pos)
 
         if xlabels is None: xlabels = self.param
@@ -403,8 +410,10 @@ class BPT_query():
         plt.figure(figsize=(10,9))
         plt.subplot2grid((4, 4), (0, 2),rowspan=2,colspan=2)
         
-        BPT_contours(self.data.log_NII6583_Ha,self.data.log_OIII5007_Hb,weights=self.data.age_Myr)
-
+#        BPT_contours(self.data.log_NII6583_Ha,self.data.log_OIII5007_Hb,weights=self.data.age_Myr)
+        plt.scatter(self.data.log_NII6583_Ha,self.data.log_OIII5007_Hb,
+                    c='k',s=5,lw=0,alpha=0.5)
+        
         plt.errorbar(self.table_obs.log_NII6583_Ha, self.table_obs.log_OIII5007_Hb,
                      xerr=self.table_obs.log_NII6583_Ha_err,yerr=self.table_obs.log_OIII5007_Hb_err,
                      c="gray",ls="",marker="o",ms=4,mfc="gold",mec="k",lw=.5,alpha=0.7,
@@ -412,6 +421,8 @@ class BPT_query():
       
         plt.scatter(pos[0][0],pos[0][1],c="lime",s=100,edgecolor='gray',alpha=1.,zorder=4)
         plt.scatter(pos[0][0],pos[0][1],marker='x',c="k",s=40,lw=1,alpha=1.,zorder=5)
+        BPT_set()
+        
         
         P1_MC, P1_vote_MC = self.predict_MC(pos,n_MC=n_MC)
 
@@ -464,12 +475,15 @@ class BPT_query():
         plt.grid(True)
         ax0 = plt.subplot2grid((4, 5), (0, 0),rowspan=4,colspan=3)
         
-        BPT_contours(self.data.log_NII6583_Ha,self.data.log_OIII5007_Hb,weights=self.data.age_Myr)
+#        BPT_contours(self.data.log_NII6583_Ha,self.data.log_OIII5007_Hb,weights=self.data.age_Myr)
+        plt.scatter(self.data.log_NII6583_Ha,self.data.log_OIII5007_Hb,
+                    c='k',s=5,lw=0,alpha=0.5)
         
         ax0.scatter(self.positions[:,0],self.positions[:,1],
                     color='k',s=15,alpha=0.7)
 #        cb = plt.colorbar()
 #        cb.set_label('log Age/yr',fontsize="large")
+        BPT_set()
         
         if xlabels is None: xlabels = self.param
         
@@ -527,6 +541,9 @@ class BPT_query():
         self.classifier = clf_multi
         
         y_pred_class = clf_multi.predict(self.X_test).astype("str")
+        if method == "RF-single":
+            y_pred_class = np.int_((y_pred_class).astype("float")).astype("str")
+
         self.y_pred_class = pd.DataFrame({t:col for (t,col) in zip(self.param,y_pred_class.T)},columns=self.param)
         
         self.accuracy = [accuracy_score(self.y_test_class[t], self.y_pred_class[t]) for t in self.param]
@@ -677,10 +694,12 @@ class BPT_query():
         plt.figure(figsize=(11,7))
         plt.subplot2grid((4, 3), (0, 0),rowspan=4,colspan=2)
         
-        BPT_contours(self.data.log_NII6583_Ha,self.data.log_OIII5007_Hb,weights=self.data.age_Myr)
-        
+#        BPT_contours(self.data.log_NII6583_Ha,self.data.log_OIII5007_Hb,weights=self.data.age_Myr)
+        plt.scatter(self.data.log_NII6583_Ha,self.data.log_OIII5007_Hb,
+                    c='k',s=5,lw=0,alpha=0.5)        
         plt.scatter(pos[0][0],pos[0][1],c="lime",s=100,edgecolor='gray',alpha=1.,zorder=4)
         plt.scatter(pos[0][0],pos[0][1],marker='x',c="k",s=40,lw=1,alpha=1.,zorder=5)
+        BPT_set()
         
         P1_MC, P1_vote_MC = self.classify_MC(pos,n_MC=n_MC)
 
@@ -700,10 +719,12 @@ class BPT_query():
         plt.figure(figsize=(10,9))
         plt.subplot2grid((4, 4), (0, 2),rowspan=2,colspan=2)
         
-        BPT_contours(self.data.log_NII6583_Ha,self.data.log_OIII5007_Hb,weights=self.data.age_Myr)
-      
+#        BPT_contours(self.data.log_NII6583_Ha,self.data.log_OIII5007_Hb,weights=self.data.age_Myr)
+        plt.scatter(self.data.log_NII6583_Ha,self.data.log_OIII5007_Hb,
+                    c='k',s=5,lw=0,alpha=0.5)      
         plt.scatter(pos[0][0],pos[0][1],c="lime",s=100,edgecolor='gray',alpha=1.,zorder=4)
         plt.scatter(pos[0][0],pos[0][1],marker='x',c="k",s=40,lw=1,alpha=1.,zorder=5)
+        BPT_set()
         
         P1_MC, P1_vote_MC = self.classify_MC(pos)
 
