@@ -9,50 +9,13 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.stats as st
-from scipy.spatial import ConvexHull
 from astropy.io import ascii
 from astropy.table import Table, vstack, hstack
 import seaborn as sns
+from sklearn.neighbors import KNeighborsRegressor
 
 import collections
 import BPT_query as B
-
-def Plot_grid(j=1,q_med,q_25,q_75):
-    plt.figure(figsize=(16,5))
-    ax0 = plt.subplot(131)
-    plt.scatter(Q.data.log_NII6583_Ha,Q.data.log_OIII5007_Hb,
-                c="gray",s=5,lw=0,alpha=0.3)
-    
-    s = ax0.scatter(positions[:,0][~np.isinf(den_pos)],
-                    positions[:,1][~np.isinf(den_pos)],
-                    c=(qk_75-qk_25)[:,j][~np.isinf(den_pos)],
-                    cmap='gnuplot2',edgecolors="k",
-                    linewidths=0.5,s=20,alpha=0.8)
-    plt.colorbar(s)
-    B.BPT_set()
-    
-    ax1 = plt.subplot(132)
-    plt.scatter(Q.data.log_NII6583_Ha,Q.data.log_OIII5007_Hb,
-                c="gray",s=5,lw=0,alpha=0.3)
-    
-    s=ax1.scatter(positions[:,0][~np.isinf(den_pos)],
-                  positions[:,1][~np.isinf(den_pos)],
-                  c=qk_med[:,j][~np.isinf(den_pos)],
-                  cmap='gnuplot2',edgecolors="k",
-                  linewidths=0.5,s=20,alpha=0.8)
-    plt.colorbar(s)
-    B.BPT_set()
-    
-    ax2 = plt.subplot(133)
-    s = ax2.scatter(Q.data.log_NII6583_Ha,Q.data.log_OIII5007_Hb,
-                    c=Q.data[Q.param[j]],cmap='gnuplot2',s=20,lw=0,alpha=0.5)
-    
-    plt.colorbar(s)
-    B.BPT_set()
-    
-    plt.tight_layout()
-#plt.savefig("M6_Grid_M",dpi=250)
-
 
 # =============================================================================
 # Line used
@@ -88,6 +51,44 @@ table = table_M.to_pandas()
 table1 = table[table.category==1]
 table2 = table[table.category==2]  
 
+def Plot_grid(q_m,q_25,q_75,den_pos,j=1,clim=[None,None,None],data=tab_mod):
+    plt.figure(figsize=(16,5))
+    ax0 = plt.subplot(131)
+    plt.scatter(data.log_NII6583_Ha,data.log_OIII5007_Hb,
+                c="gray",s=5,lw=0,alpha=0.3)
+    
+    s = ax0.scatter(positions[:,0][(den_pos)>-15],
+                    positions[:,1][(den_pos)>-15],
+                    c=(q_75-q_25)[:,j][(den_pos)>-15],
+                    cmap='hot',edgecolors="k",
+                    linewidths=0.5,s=20,alpha=0.8)
+    cb1=plt.colorbar(s)
+    cb1.set_clim(clim[0])
+    B.BPT_set()
+    
+    ax1 = plt.subplot(132)
+    plt.scatter(data.log_NII6583_Ha,data.log_OIII5007_Hb,
+                c="gray",s=5,lw=0,alpha=0.3)
+    
+    s=ax1.scatter(positions[:,0][(den_pos)>-15],
+                  positions[:,1][(den_pos)>-15],
+                  c=q_m[:,j][(den_pos)>-15],
+                  cmap='gnuplot2',edgecolors="k",
+                  linewidths=0.5,s=20,alpha=0.8)
+    cb2=plt.colorbar(s)
+    cb2.set_clim(clim[1])
+    B.BPT_set()
+    
+    ax2 = plt.subplot(133)
+    s = ax2.scatter(data.log_NII6583_Ha,data.log_OIII5007_Hb,
+                    c=data[Q.param[j]],cmap='gnuplot2',
+                    edgecolors="k",s=15,linewidths=0.2,alpha=0.5)
+    
+    cb3=plt.colorbar(s)
+    cb3.set_clim(clim[2])
+    B.BPT_set()
+    
+    plt.tight_layout()
 # =============================================================================
 # Train
 # =============================================================================
@@ -96,13 +97,41 @@ Q = B.BPT_query(data=tab_mod, param=params)
 Q.set_data(line_used = ["log_NII6583_Ha","log_OIII5007_Hb"],table_obs=table1, use_pca=False)
 Q.regression("RF-single", n_estimators=200,min_samples_leaf=10)
 
-# =============================================================================
-# KNN
-# =============================================================================
-from sklearn.neighbors import KNeighborsRegressor
+n_neighbors = 5
+n_estimators = 200
+n_MC = 200
+
+Y, X = np.mgrid[0.7:-3.4:42j,-2.25:-.25:41j]
+xx,yy = X[0,:],Y[:,0]
 
 positions = np.vstack([X.ravel(), Y.ravel()]).T
 
+# =============================================================================
+# KDE
+# =============================================================================
+from sklearn.neighbors.kde import KernelDensity
+xx_mod, yy_mod = np.mgrid[-2.5:0.5:100j, -3.5:1.5:100j]
+pos_mod = np.vstack([xx_mod.ravel(), yy_mod.ravel()]).T
+values = np.vstack([tab_mod.log_NII6583_Ha,tab_mod.log_OIII5007_Hb]).T
+kde = KernelDensity(kernel='tophat',bandwidth=0.05).fit(values)
+
+X_mod = np.array(zip(pos_mod[:,0],pos_mod[:,1]))
+den_mod = kde.score_samples(X_mod)
+den_pos = kde.score_samples(positions)
+
+#Plot KDE
+plt.figure(figsize=(7,6))
+im = plt.imshow(den_mod.reshape(xx_mod.shape[0],xx_mod.shape[1]).T,cmap="viridis",
+                origin='lower',aspect='auto',extent=[-2.5,0.5,-3.5,1.5])
+plt.scatter(Q.data.log_NII6583_Ha,Q.data.log_OIII5007_Hb,
+            c="gray",s=5,lw=0,alpha=0.3)
+cb = plt.colorbar(mappable=im)
+cb.set_label('log density',fontsize="large")
+B.BPT_set()
+
+# =============================================================================
+# KNN
+# =============================================================================
 knn = KNeighborsRegressor(n_neighbors=10)
 
 knn.fit(Q.X_train,Q.y_train)
@@ -119,39 +148,130 @@ for k in range(len(positions)):
     qk_25[k] = k_samples.quantile(0.25)
     qk_75[k] = k_samples.quantile(0.75)
 
-Plot_grid(j=1,q_med=qk_med,q_25=qk_25,q_75=qk_75)
+Plot_grid(q_med=qk_med,q_25=qk_25,q_75=qk_75,den_pos=den_pos,j=1)
 #plt.savefig("Grid_M_KNN",dpi=200)
+
 
 # =============================================================================
 # KNN Bagging
 # =============================================================================
 from sklearn.utils import resample
 
+K_samples = collections.defaultdict(list)
+for i in range(n_estimators):
+    X_re,y_re = resample(Q.X_train,Q.y_train)
+    
+    knn = KNeighborsRegressor(n_neighbors=n_neighbors)  
+    knn.fit(X_re,y_re)   
+    dist,ind = knn.kneighbors(positions)
+
+    k_samples = np.concatenate([y_re.iloc[ind[k]] for k in range(len(positions))])
+    # Each line of K_samples_MC is a bagging
+    K_samples[i] = k_samples
+    if np.mod(i+1,20)==0:
+        print "Bagging: %d/%d"%(i+1,n_estimators)
+
+Bagging = np.zeros((len(positions),n_estimators*knn.n_neighbors,len(Q.param)))
 qK_med = np.zeros((positions.shape[0],len(Q.param)))
 qK_25 = np.zeros((positions.shape[0],len(Q.param)))
 qK_75 = np.zeros((positions.shape[0],len(Q.param)))
-
 for k in range(len(positions)):
-    samples = collections.defaultdict(list)
-    k_samples = pd.DataFrame()
-    for i in range(n_estimators):
-        X_re,y_re = resample(Q.X_train,Q.y_train)
+    # Reshape K_samples_MC, each line a grid point
+    Bagging[k] = np.concatenate([K_samples[i][k*knn.n_neighbors:(k+1)*knn.n_neighbors] for i in range(n_estimators)])  
+    qK_med[k] = pd.DataFrame(Bagging[k]).quantile(0.5)
+    qK_25[k] = pd.DataFrame(Bagging[k]).quantile(0.25)
+    qK_75[k] = pd.DataFrame(Bagging[k]).quantile(0.75)
+    if np.mod(k+1,50)==0:
+        print "Grid: %d/%d"%(k+1,len(positions))
         
-        knn = KNeighborsRegressor(n_neighbors=10)
-        
-        knn.fit(X_re,y_re)
-        
-        dist,ind = knn.kneighbors(positions)
-        samples[i] = ind
+# Plot Grid        
+Plot_grid(q_m=qK_med,q_25=qK_25,q_75=qK_75,den_pos=den_pos,
+          j=1,clim=[[0.,2.],[5.,7.25],[5.,7.25]])
+#plt.savefig("Grid_M_KNN_bag.png",dpi=200)
+Plot_grid(q_m=qK_med,q_25=qK_25,q_75=qK_75,den_pos=den_pos,
+          j=2,clim=[[0.,9.],[1.,10.],[1.,10.]])
+#plt.savefig("Grid_SFE_KNN_bag.png",dpi=200)
+Plot_grid(q_m=qK_med,q_25=qK_25,q_75=qK_75,den_pos=den_pos,
+          j=3,clim=[[0.,400.],[100.,500.],[100.,500.]])
+#plt.savefig("Grid_nH_KNN_bag.png",dpi=200)
 
-        k_samples = pd.concat([k_samples, y_re.iloc[samples[i][k]]])
+Plot_grid(q_m=qK_med,q_25=qK_25,q_75=qK_75,den_pos=den_pos,
+          j=0,clim=[[0.,30.],[0.,30.],[0.,30.]])
+#plt.savefig("Grid_Age_KNN_bag.png",dpi=200)
+
+# =============================================================================
+# Point MC
+# =============================================================================
+pos = np.tile([-0.6,-0.5],(n_MC,1))
+noise = np.random.normal(0, 0.05*np.ones_like(pos))
+pos += noise
+
+pos[-1] = [-0.6,-0.5]            
+
+K_samples_MC = collections.defaultdict(list)
+
+for i in range(n_estimators):
+    X_re,y_re = resample(Q.X_train,Q.y_train)
+    
+    knn = KNeighborsRegressor(n_neighbors=n_neighbors) 
+    knn.fit(X_re,y_re)  
+    dist,ind = knn.kneighbors(pos)
+
+    k_samples = np.concatenate([y_re.iloc[ind[k]] for k in range(n_MC)])
+    # Each line of K_samples_MC is a bagging
+    K_samples_MC[i] = k_samples
+    if np.mod(i+1,40)==0:
+        print "Bagging: %d/%d"%(i+1,n_estimators)
+
+Bagging_MC = np.zeros((n_MC,n_estimators*knn.n_neighbors,len(Q.param)))
+for k in range(n_MC):
+    # Reshape K_samples_MC to have each line to be a MC
+    Bagging_MC[k] = np.concatenate([K_samples_MC[i][k*knn.n_neighbors:(k+1)*knn.n_neighbors] for i in range(n_estimators)])
+X_all = Bagging_MC.reshape((n_MC*n_estimators*knn.n_neighbors,len(Q.param)))
+
+#Plot
+plt.figure(figsize=(7,6))
+bins = [10,20,15,10]
+for j,(b,t,lab) in enumerate(zip(bins,Q.param,["Age(Myr)","log $M_{cloud}$","SFE","nH"])):
+    ax=plt.subplot(2,2,j+1)
+    
+    for k in range(n_MC):
+        sns.distplot(Bagging_MC[k][:,j], bins=b,color='gray',
+                 hist_kws={"histtype":"step","alpha":0.1},
+                 kde=False,label="MC",ax=ax)
+    sns.distplot(pd.Series(X_all[:,j]).sample(n_estimators*knn.n_neighbors), color="k",bins=b,
+                 hist_kws={"histtype":"step","linestyle": "-",
+                           "linewidth": 3,"alpha":.7},
+                           kde=False,label="Center",ax=ax)
+    plt.xlabel(lab)
+plt.suptitle("MC KNN Distribution for Point (-0.6,-0.5)",fontsize=12)
+plt.tight_layout(rect=(0,0,1,0.95)) 
+
+# =============================================================================
+# Radius KNN
+# =============================================================================
+from sklearn.neighbors import RadiusNeighborsRegressor
+K_samples = collections.defaultdict(list)
+for k in range(len(positions)):
+    X_re,y_re = resample(Q.X_train,Q.y_train)
+
+    knn = RadiusNeighborsRegressor(n_neighbors=n_neighbors)  
+    knn.fit(X_re,y_re)   
+    dist,ind = knn.radius_neighbors(positions)
+    K_samples[k] = np.concatenate([y_re.iloc[ind[i]] for i in range(n_estimators)])
+    if np.mod(k+1,50)==0:
+        print "Grid: %d/%d"%(i+1,len(positions))
         
+qK_med = np.zeros((positions.shape[0],len(Q.param)))
+qK_mean = np.zeros((positions.shape[0],len(Q.param)))
+qK_25 = np.zeros((positions.shape[0],len(Q.param)))
+qK_75 = np.zeros((positions.shape[0],len(Q.param)))
+for k in range(len(positions)):
+    k_samples = K_samples[k]
+    qK_mean[k] = k_samples.mean()
     qK_med[k] = k_samples.quantile(0.5)
     qK_25[k] = k_samples.quantile(0.25)
     qK_75[k] = k_samples.quantile(0.75)
-
     if np.mod(k+1,50)==0:
         print "Grid: %d/%d"%(k+1,len(positions))
-
-# Plot Grid        
-Plot_grid(j=1,q_med=qK_med,q_25=qK_25,q_75=qK_75)
+        
