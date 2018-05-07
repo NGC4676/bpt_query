@@ -137,14 +137,17 @@ from sklearn import svm
 
 class BPT_query():
     
-    def __init__(self, data,param=["log_age","M_cloud"]):
+    def __init__(self, data,param=["log_age","M_cloud"],use_all=True):
         self.param = param
         self.data = data#.to_pandas()
         y_true = pd.DataFrame({t:self.data[t] for t in param},columns=param)
         self.y_true = y_true
-        
-        tab_train, tab_test, y_train, y_test = train_test_split(self.data, self.y_true, test_size=0.25)
-        self.tab_train, self.tab_test = tab_train, tab_test
+        if use_all:
+            self.tab_train, self.tab_test = self.data, self.data
+            y_train, y_test = self.y_true, self.y_true
+        else:
+            tab_train, tab_test, y_train, y_test = train_test_split(self.data, self.y_true, test_size=0.25)
+            self.tab_train, self.tab_test = tab_train, tab_test
 
         self.y_train, self.y_test = y_train, y_test        
         self.y_train_class = self.y_train.astype("str")
@@ -173,6 +176,8 @@ class BPT_query():
             
         self.X_train = X_train
         self.X_test = X_test
+        self.X_all = np.vstack([self.X_train,self.X_test])
+        self.y_all = np.vstack([self.y_train,self.y_test])
         
     def performance(self):
         # Scatter
@@ -231,7 +236,7 @@ class BPT_query():
         #y_pred = pd.DataFrame({t:regr.predict(self.X_test) for (regr,t) in zip(regrs_fit,self.param)},columns=self.param)
         self.y_pred = pd.DataFrame({t:col for (t,col) in zip(self.param,y_pred.T)},columns=self.param)
         
-        self.r2 = [r2_score(self.y_test[t], self.y_pred[t]) for t in self.param]
+        self.r2 = r2_score(self.y_test,self.y_pred,multioutput="raw_values")
         print self.r2
         
         return self.regressor
