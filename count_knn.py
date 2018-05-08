@@ -290,6 +290,46 @@ plt.suptitle("MC KNN Distribution for Point (%.2f,%.2f)"%(point[0],point[1]),fon
 plt.tight_layout(rect=(0,0,1,0.95)) 
 
 # =============================================================================
+# LOO test
+# =============================================================================
+X_all = np.vstack([tab_mod[line] for line in line_used]).T
+y_all = np.vstack([tab_mod[t] for t in Q.param]).T
+
+metric = np.zeros((len(tab_mod),len(Q.param)))
+for k in range(len(tab_mod)):
+    
+    X_tr = np.delete(X_all,k,axis=0)
+    X_te = [X_all[k]]
+    y_tr = np.delete(y_all,k,axis=0)
+    y_te = y_all[k]
+    
+    K_samples = collections.defaultdict(list)
+    K_models = collections.defaultdict(list)
+    for i in range(n_estimators):
+        X_re,y_re = resample(X_tr,y_tr)
+        
+        knn = KNeighborsRegressor(n_neighbors=n_neighbors)  
+        knn.fit(X_re,y_re)   
+        dist,ind = knn.kneighbors(X_te)
+    
+        k_samples = y_re[ind[0]]
+        k_models = X_re[ind[0]]
+        K_samples[i] = k_samples
+        K_models[i] = k_models
+        
+    samples = np.concatenate([K_samples[i] for i in range(n_estimators)])  
+    qt_med = pd.DataFrame(samples).quantile(0.5)
+    qt_25 = pd.DataFrame(samples).quantile(0.25)
+    qt_75  = pd.DataFrame(samples).quantile(0.75)
+    
+    metric[k] = ((y_te>=qt_25)&(y_te<=qt_75))
+
+    if np.mod(k+1,500)==0:
+        print "Test: %d/%d"%(k+1,len(Q.X_test))
+
+print 1.0*metric.sum(axis=0)/len(metric)
+[ 0.49842333  0.6346078   0.71344107  0.8355341 ]   
+# =============================================================================
 # Local
 # =============================================================================
 d=4800

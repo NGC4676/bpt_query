@@ -132,16 +132,14 @@ plot_KDE(den_mod, shape=xx_mod.shape)
 X_all = np.vstack([tab_mod[line] for line in line_used]).T
 y_all = np.vstack([tab_mod[t] for t in Q.param]).T
 
-metric = np.zeros((10,len(Q.param)))
-for k in range(10):
-    Q = B.BPT_query(data=tab_mod.drop(0), param=params)
+metric = np.zeros((len(tab_mod),len(Q.param)))
+for k,ind in enumerate(tab_mod.index):
+    Q = B.BPT_query(data=tab_mod.drop(ind), param=params)
     Q.set_data(line_used = ["log_NII6583_Ha","log_OIII5007_Hb"],table_obs=table1, use_pca=False)
     Q.regression("RF-single", n_estimators=200,min_samples_leaf=2)
     
-    Q.X_test = [X_all[0]]
-    Q.y_test = y_all[0]
     
-    leaf_nodes_test = Q.regressor.apply(Q.X_test)
+    leaf_nodes_test = Q.regressor.apply([X_all[k]])
     leaf_nodes_mod = Q.regressor.apply(Q.X_train)
     
     nodes = collections.defaultdict(list)
@@ -156,8 +154,12 @@ for k in range(10):
     qt_25 = pd.DataFrame(leaf_samples).quantile(0.25)
     qt_75 = pd.DataFrame(leaf_samples).quantile(0.75)
     
-    metric[k] = ((Q.y_test>=qt_25)&(Q.y_test<=qt_75))
+    metric[k] = ((y_all[k]>=qt_25)&(y_all[k]<=qt_75))
+    if np.mod(k+1,200)==0:
+        print "Test: %d/%d"%(k+1,len(Q.X_test))
 
+print 1.0*metric.sum(axis=0)/len(metric)
+     
 # =============================================================================
 # New test
 # =============================================================================
